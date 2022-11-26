@@ -1,0 +1,155 @@
+﻿<#@ template debug="false" hostspecific="true" language="C#" #>
+<#@ assembly name="System" #>
+<#@ assembly name="System.Xml" #>
+<#@ import namespace="System.IO" #>
+<#@ import namespace="System.Text" #>
+<#@ import namespace="System.Collections.Generic" #>
+<#@ import namespace="System.Xml.Serialization" #>
+<#@ import namespace="System.Reflection" #>
+<#@ import namespace="System.CodeDom.Compiler" #>
+<#@ output extension="razor" #>
+<#
+string model = File.ReadAllText(this.Host.ResolvePath("MyModel.cs"));
+ 
+CodeDomProvider provider = CodeDomProvider.CreateProvider("CSharp");
+CompilerParameters cp = new CompilerParameters();
+cp.GenerateExecutable = false;
+cp.GenerateInMemory = true;
+cp.ReferencedAssemblies.Add("System.dll");
+cp.ReferencedAssemblies.Add("System.Core.dll");
+cp.ReferencedAssemblies.Add("System.Xml.dll");
+cp.ReferencedAssemblies.Add("System.ComponentModel.DataAnnotations.dll");
+ 
+CompilerResults cr = provider.CompileAssemblyFromSource(cp, new string[] { model });
+if (cr.Errors.Count > 0)
+{
+   Error("Errors detected in the compiled model");
+}
+else
+{
+#>
+<#
+    bool nsAdded = false;
+    string MyType = string.Empty;
+ 
+    Type[] types = cr.CompiledAssembly.GetTypes();
+    foreach (Type type in types)
+    {
+        MyType = type.Name;
+        // time to generate code
+        if(nsAdded == false)
+        {
+#>
+@implements IDisposable
+
+<EditForm EditContext="@editContext" OnValidSubmit="@HandleValidSubmit">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+<#
+        nsAdded = true;
+
+        List<PropertyInfo> toGenerate = new List<PropertyInfo>();
+ 
+        foreach (PropertyInfo pi in type.GetProperties())
+        {
+            if(pi.PropertyType == typeof(string))
+            {
+#>
+    <p>
+        <label>
+            <#=pi.Name#>:
+            <InputText @bind-Value="model.<#=pi.Name#>" class="form-control" />
+        </label>
+    </p>
+<#
+            }
+            if(pi.PropertyType == typeof(int) || pi.PropertyType == typeof(double))
+            {
+#>
+    <p>
+        <label>
+            <#=pi.Name#>:
+            <InputNumber @bind-Value="model.<#=pi.Name#>" class="form-control" />
+        </label>
+    </p>
+<#
+            }
+            if(pi.PropertyType == typeof(DateTime))
+            {
+#>
+    <p>
+        <label>
+            <#=pi.Name#>:
+            <InputDate @bind-Value="model.<#=pi.Name#>" class="form-control" />
+        </label>
+    </p>
+<#
+            }
+            if(pi.PropertyType == typeof(bool))
+            {
+#>
+    <p>
+        <label>
+            <#=pi.Name#>:
+            <InputCheckbox @bind-Value="model.<#=pi.Name#>" class="form-control" />
+        </label>
+    </p>
+<#
+            }
+            if(typeof(IEnumerable<Object>).IsAssignableFrom(pi.PropertyType))
+            {
+#>
+    <p>
+        <label>
+            <#=pi.Name#>:
+            <InputSelect @bind-Value="model.<#=pi.Name#>" class="form-control">
+                <option value="">Select value ...</option>
+            </InputSelect>
+        </label>
+    </p>
+<#
+            }
+        }
+    }
+}
+#>
+    <button type="submit" disabled="@formInvalid" class="form-control">Submit</button>
+</EditForm>
+
+@code {
+    private <#=MyType#> model = new();
+    private bool formInvalid = false;
+    private EditContext? editContext;
+
+    protected override void OnInitialized()
+    {
+        editContext = new(model);
+        editContext.OnFieldChanged += HandleFieldChanged;
+    }
+
+    private void HandleFieldChanged(object? sender, FieldChangedEventArgs e)
+    {
+        if (editContext is not null)
+        {
+            formInvalid = !editContext.Validate();
+            StateHasChanged();
+        }
+    }
+
+    private void HandleValidSubmit()
+    {
+        // Process the valid form
+    }
+
+    public void Dispose()
+    {
+        if (editContext is not null)
+        {
+            editContext.OnFieldChanged -= HandleFieldChanged;
+        }
+    }
+}
+<#
+}
+#>
+
